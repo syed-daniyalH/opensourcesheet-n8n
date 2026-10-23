@@ -16,4 +16,5 @@ test("forces the embedded Grist document to use the light theme", () => {
 test("renders the configured document with the light-theme parameters", () => {
   const html = renderEditorShell("/doc/Blank-document");
   assert.match(html, /src="\/doc\/Blank-document\?themeAppearance=light&themeSyncWithOs=false"/);
+  assert.match(html, /class="editor-chrome"/);
 });
