@@ -49,7 +49,7 @@ The Compose gateway binds to host port `8487` for staging and `8488` for product
 
 The gateway is intentionally dependency-free. It is a protective entry point for this project, not a replacement for a public identity provider, HTTPS termination, rate limiting, or a production secret manager.
 
-See [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review, supported functionality, explicit gaps, and the next implementation phases. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine.
+See [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review and [`docs/REPORTING_WORKSPACE_ROADMAP.md`](docs/REPORTING_WORKSPACE_ROADMAP.md) for the Excel/Google feature mapping, delivery priorities, CRM boundary, and remaining production work. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine.
 
 ## Deployment notes
 

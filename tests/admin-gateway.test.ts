@@ -81,6 +81,9 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     assert.match(editorHtml, /Format/);
     assert.match(editorHtml, /Currency format/);
     assert.match(editorHtml, /Grist spreadsheet workspace/);
+    assert.match(editorHtml, /Page Layout/);
+    assert.match(editorHtml, /Formulas/);
+    assert.match(editorHtml, /CRM pipeline status/);
 
     const workspaceResponse = await fetch(`${gatewayUrl}/grist/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(workspaceResponse.status, 200);
