@@ -4,6 +4,7 @@ COPY package.json tsconfig.json ./
 RUN npm install
 COPY src ./src
 RUN npm run build
+RUN mkdir -p dist/assets && cp src/assets/aureum-logo.png dist/assets/aureum-logo.png && cp src/assets/aureum-mall-design.jpg dist/assets/aureum-mall-design.jpg
 
 FROM node:22-alpine
 WORKDIR /app

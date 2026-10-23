@@ -54,11 +54,25 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     const loginPageResponse = await fetch(`${gatewayUrl}/login`);
     assert.equal(loginPageResponse.status, 200);
     const loginHtml = await loginPageResponse.text();
+    assert.match(loginHtml, /Aureum Mall &amp; Residences/);
+    assert.match(loginHtml, /Aureum Sales CRM/);
+    assert.match(loginHtml, /src="\/assets\/aureum-logo\.png"/);
+    assert.match(loginHtml, /aureum-mall-design\.jpg/);
     assert.match(loginHtml, /Welcome back/);
-    assert.match(loginHtml, /Punchdeck workspace/);
+    assert.match(loginHtml, /Sign in to continue/);
     assert.match(loginHtml, /id="show-password"/);
     assert.match(loginHtml, /autocomplete="current-password"/);
-    assert.match(loginHtml, /Protected admin access/);
+    assert.match(loginHtml, /Access is managed by your organization/);
+
+    const logoResponse = await fetch(`${gatewayUrl}/assets/aureum-logo.png`);
+    assert.equal(logoResponse.status, 200);
+    assert.equal(logoResponse.headers.get("content-type"), "image/png");
+    assert.ok((await logoResponse.arrayBuffer()).byteLength > 1000);
+
+    const designResponse = await fetch(`${gatewayUrl}/assets/aureum-mall-design.jpg`);
+    assert.equal(designResponse.status, 200);
+    assert.equal(designResponse.headers.get("content-type"), "image/jpeg");
+    assert.ok((await designResponse.arrayBuffer()).byteLength > 1000);
 
     const protectedResponse = await fetch(`${gatewayUrl}/`, { redirect: "manual" });
     assert.equal(protectedResponse.status, 303);
