@@ -1,0 +1,27 @@
+[
+  {
+    "source": "punchdeck-api",
+    "externalId": "pd-1001",
+    "fetchedAt": "2026-10-24T00:00:00.000Z",
+    "sourceUpdatedAt": "2026-10-23T23:45:00.000Z",
+    "sourceUrl": "https://api.example.test/items/pd-1001",
+    "payload": {
+      "title": "Example campaign",
+      "status": "active",
+      "metrics": { "views": 12345, "clicks": 321 },
+      "tags": ["example", "smoke-test"]
+    }
+  },
+  {
+    "source": "punchdeck-api",
+    "externalId": "pd-1002",
+    "fetchedAt": "2026-10-24T00:00:00.000Z",
+    "sourceUrl": "https://api.example.test/items/pd-1002",
+    "payload": {
+      "title": "Unicode ✓ payload",
+      "status": "paused",
+      "metrics": { "views": 0, "clicks": 0 },
+      "tags": []
+    }
+  }
+]

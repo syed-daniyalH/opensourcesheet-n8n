@@ -6,7 +6,7 @@ Date: 2026-10-24
 
 Command: `npm run check`
 
-Result: **Pass — 13 tests passed, 0 failed.**
+Result: **Pass — 19 tests passed, 0 failed.**
 
 Coverage of the current foundation:
 
@@ -17,6 +17,8 @@ Coverage of the current foundation:
 | Grist client | URL encoding, `PUT` method, bearer authentication, JSON upsert body, key-field enforcement, bounded error text |
 | Retry behavior | Transient recovery, exponential delay sequence, retry budget and final error |
 | Pipeline | Dry-run behavior, batch writes, configured key propagation, invalid-record accounting |
+| Payload fixtures | Representative API records, Unicode data, provenance, stable hashes independent of JSON key order |
+| Executable smoke test | Real process startup, local Grist-compatible HTTP request, authentication, payload delivery, retry recovery |
 
 ## Functional mock run
 
@@ -29,6 +31,10 @@ Result: **Pass**
 ```
 
 This proves the executable path from configuration through source collection, normalization, and pipeline summary. It does not prove connectivity to a real Grist server.
+
+Dedicated smoke command: `npm run test:smoke` — **2 smoke tests passed, 0 failed**.
+
+The smoke tests start a local HTTP endpoint, run `src/index.ts` as a child process, inspect the outgoing `PUT` payload, verify the bearer token and idempotency keys, and confirm recovery after one simulated HTTP 500 response.
 
 ## Deployment configuration checks
 

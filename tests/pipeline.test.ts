@@ -30,6 +30,20 @@ class FailingSourceAdapter {
   }
 }
 
+class FlakyWriter implements GristWriter {
+  public attempts = 0;
+
+  public async upsert(
+    _tableId: string,
+    _records: ReadonlyArray<Record<string, JsonValue>>,
+    _keyColumns: ReadonlyArray<string>,
+  ): Promise<unknown> {
+    this.attempts += 1;
+    if (this.attempts === 1) throw new Error("temporary Grist outage");
+    return { addRecordIds: [], updateRecordIds: [1, 2] };
+  }
+}
+
 test("dry-run collects and normalizes without writing", async () => {
   const writer = new MemoryWriter();
   const summary = await runPipeline(new MockSourceAdapter(), writer, {
@@ -88,4 +102,26 @@ test("counts invalid source records without writing them", async () => {
     dryRun: false,
   });
   assert.equal(writer.calls.length, 0);
+});
+
+test("retries a transient batch write and reports the successful batch", async () => {
+  const writer = new FlakyWriter();
+  const summary = await runPipeline(new MockSourceAdapter(), writer, {
+    tableId: "RawRecords",
+    keyColumns: ["CanonicalKey"],
+    batchSize: 100,
+    maxRetries: 1,
+    retryBaseDelayMs: 1,
+    dryRun: false,
+  });
+
+  assert.equal(writer.attempts, 2);
+  assert.deepEqual(summary, {
+    source: "mock-source",
+    seen: 2,
+    normalized: 2,
+    written: 2,
+    failed: 0,
+    dryRun: false,
+  });
 });

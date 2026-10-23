@@ -19,6 +19,7 @@ It intentionally uses a mock source until the real Punchdeck API/scraper resourc
 ```powershell
 npm install
 npm run check
+npm run test:smoke
 ```
 
 See `docs/TEST_REPORT.md` for the executed unit, functional, and deployment-configuration checks.

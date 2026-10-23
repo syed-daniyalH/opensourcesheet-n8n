@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:smoke": "npm run build && tsx --test tests/smoke.test.ts",
     "check": "npm run build && npm test",
     "start": "node --env-file=.env dist/index.js"
   },

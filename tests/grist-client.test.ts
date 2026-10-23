@@ -50,3 +50,17 @@ test("rejects records missing the configured upsert key", async () => {
     /Missing upsert key column: CanonicalKey/,
   );
 });
+
+test("does not make a network request for an empty batch", async () => {
+  let calls = 0;
+  const fetchMock: typeof fetch = async () => {
+    calls += 1;
+    return new Response("unexpected request", { status: 500 });
+  };
+  const client = new GristClient("https://grist.example.test", "doc", "secret", fetchMock);
+
+  const result = await client.upsert("RawRecords", [], ["CanonicalKey"]);
+
+  assert.deepEqual(result, { addRecordIds: [], updateRecordIds: [] });
+  assert.equal(calls, 0);
+});
