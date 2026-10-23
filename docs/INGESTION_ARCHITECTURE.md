@@ -2,7 +2,9 @@
 
 ## Product boundary
 
-This project is a sheet-backed ingestion and reporting surface. It receives records from Meta and other approved sources, stores them in Grist, and makes the data available to CRM or reporting consumers. It is not itself a customer-follow-up schema.
+This project is a sheet-backed ingestion and reporting surface. Grist is the primary self-hosted spreadsheet and data store: people can enter, edit, and report on data directly in the sheet. The system also receives records from Meta and other approved sources, stores them in the same Grist document, and makes the data available to CRM or reporting consumers. It is not itself a customer-follow-up schema.
+
+Google Sheets and Excel define the familiar interaction target, but they are not the production storage layer for this deployment. An optional future connector may import or export compatible files; it must not replace the self-hosted Grist store without an explicit architecture decision.
 
 The main pattern is:
 
@@ -37,6 +39,16 @@ The pipeline then performs the source-independent work:
 4. Calculate a content hash for change detection.
 5. Write batches to Grist with retry behavior.
 6. Report counts and failures for the sync run.
+
+## Primary persistence model
+
+The website is the protected front door. Grist is the primary persistence layer. The source adapter and API pipeline are write paths into Grist, and the human spreadsheet editor is another write path. Both paths meet in the same document so that imported leads and manually entered records are available to the team without copying the data into a second database.
+
+```text
+Team edits in sheet ───────┐
+                           ├─> self-hosted Grist document ──> reports / CRM API
+Meta and API adapters ─────┘
+```
 
 ## What the sheet represents
 

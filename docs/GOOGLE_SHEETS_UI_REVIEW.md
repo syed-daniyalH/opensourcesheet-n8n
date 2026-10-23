@@ -2,7 +2,7 @@
 
 ## Reference reviewed
 
-The open Google Sheets home page was reviewed only as a visual and interaction reference. No user document was opened, edited, downloaded, copied, or transmitted. The existing files shown in the account were intentionally left untouched.
+The open Google Sheets home page was reviewed only as a visual and interaction reference. No user document was opened, edited, downloaded, copied, or transmitted. The existing files shown in the account were intentionally left untouched. Google Sheets is not the primary storage layer for this product; the self-hosted Grist document is.
 
 The reference home screen has these important patterns:
 

@@ -1,6 +1,6 @@
 # Aureum data-ingestion sheet → Grist bridge
 
-This is a sheet-backed data-ingestion bridge for sending Meta leads and other API or scraper records into a self-hosted Grist deployment. It is a storage and reporting surface, not a customer-follow-up schema or a replacement CRM.
+This is a sheet-backed data-ingestion bridge for sending Meta leads and other API or scraper records into a self-hosted Grist deployment. Grist is the primary self-hosted spreadsheet and data store: users enter and edit data directly in the sheet, while adapters import external records into the same document. It is a storage and reporting surface, not a customer-follow-up schema or a replacement CRM.
 
 The source adapter is the boundary between an external system and the sheet:
 
@@ -38,7 +38,7 @@ The first real adapter should implement `SourceAdapter` and convert source respo
 
 ## Admin gateway and local Grist UI
 
-The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired data workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic.
+The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired data workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic. Google Sheets is a visual and interaction reference; it is not the primary database for this deployment.
 
 For local testing, create `.env.admin.local` from `.env.example`, set a password of at least 12 characters and a session secret of at least 32 characters, then run:
 
