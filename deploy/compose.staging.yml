@@ -1,0 +1,26 @@
+services:
+  grist-staging:
+    image: ${GRIST_IMAGE:-gristlabs/grist:latest}
+    restart: unless-stopped
+    environment:
+      APP_HOME_URL: ${GRIST_STAGING_URL:?Set GRIST_STAGING_URL}
+      GRIST_SESSION_SECRET: ${GRIST_SESSION_SECRET:?Set GRIST_SESSION_SECRET}
+      GRIST_FORCE_LOGIN: "true"
+      GRIST_SINGLE_ORG: ${GRIST_SINGLE_ORG:-punchdeck-staging}
+      GRIST_SANDBOX_FLAVOR: ${GRIST_SANDBOX_FLAVOR:-gvisor}
+    volumes:
+      - ${GRIST_STAGING_PERSIST_DIR:-./persist/staging}:/persist
+    ports:
+      - "127.0.0.1:8485:8484"
+
+  punchdeck-ingestion-staging:
+    build:
+      context: ..
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      GRIST_BASE_URL: http://grist-staging:8484
+      NODE_ENV: staging
+    depends_on:
+      - grist-staging
