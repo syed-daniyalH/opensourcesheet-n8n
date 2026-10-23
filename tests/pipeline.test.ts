@@ -84,14 +84,22 @@ test("writes normalized records using the configured key", async () => {
 
 test("counts invalid source records without writing them", async () => {
   const writer = new MemoryWriter();
-  const summary = await runPipeline(new FailingSourceAdapter(), writer, {
-    tableId: "RawRecords",
-    keyColumns: ["CanonicalKey"],
-    batchSize: 100,
-    maxRetries: 1,
-    retryBaseDelayMs: 1,
-    dryRun: false,
-  });
+  const logMessages: string[] = [];
+  const originalConsoleError = console.error;
+  console.error = (...args: unknown[]) => logMessages.push(args.map(String).join(" "));
+  let summary;
+  try {
+    summary = await runPipeline(new FailingSourceAdapter(), writer, {
+      tableId: "RawRecords",
+      keyColumns: ["CanonicalKey"],
+      batchSize: 100,
+      maxRetries: 1,
+      retryBaseDelayMs: 1,
+      dryRun: false,
+    });
+  } finally {
+    console.error = originalConsoleError;
+  }
 
   assert.deepEqual(summary, {
     source: "invalid-source",
@@ -102,6 +110,8 @@ test("counts invalid source records without writing them", async () => {
     dryRun: false,
   });
   assert.equal(writer.calls.length, 0);
+  assert.equal(logMessages.length, 1);
+  assert.match(logMessages[0] ?? "", /record_normalization_failed/);
 });
 
 test("retries a transient batch write and reports the successful batch", async () => {
