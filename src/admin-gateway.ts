@@ -25,6 +25,7 @@ export interface AdminGatewayConfig {
   host: string;
   port: number;
   gristOrigin: string;
+  defaultDocumentPath: string;
   username: string;
   passwordDigest: Buffer;
   passwordSalt: Buffer;
@@ -72,6 +73,14 @@ function parseOrigin(value: string): string {
   return parsed.toString().replace(/\/$/, "");
 }
 
+function parseDocumentPath(value: string | undefined): string {
+  const path = value?.trim() || "/grist/";
+  if (!path.startsWith("/") || path.startsWith("//") || /[\"'<>\r\n]/.test(path)) {
+    throw new Error("GRIST_DEFAULT_DOCUMENT_PATH must be a relative application path");
+  }
+  return path;
+}
+
 function derivePassword(password: string, salt: Buffer): Buffer {
   return scryptSync(password, salt, 32);
 }
@@ -87,6 +96,7 @@ export function loadAdminGatewayConfig(env: NodeJS.ProcessEnv = process.env): Ad
     host: env.ADMIN_GATEWAY_HOST?.trim() || "127.0.0.1",
     port: positiveInteger(env, "ADMIN_GATEWAY_PORT", 3000),
     gristOrigin: parseOrigin(required(env, "GRIST_ORIGIN")),
+    defaultDocumentPath: parseDocumentPath(env.GRIST_DEFAULT_DOCUMENT_PATH),
     username: env.ADMIN_USERNAME?.trim() || "admin",
     passwordDigest: derivePassword(password, passwordSalt),
     passwordSalt,
@@ -357,7 +367,7 @@ export function createAdminGatewayServer(config: AdminGatewayConfig): Server {
     }
 
     if (pathname === "/editor") {
-      sendHtml(response, 200, renderEditorShell());
+      sendHtml(response, 200, renderEditorShell(config.defaultDocumentPath));
       return;
     }
 

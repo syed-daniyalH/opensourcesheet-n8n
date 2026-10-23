@@ -32,6 +32,9 @@ test("loads a secure gateway configuration and rejects weak secrets", () => {
   const config = loadAdminGatewayConfig(env);
   assert.equal(config.username, "admin");
   assert.equal(config.gristOrigin, "http://127.0.0.1:1");
+  assert.equal(config.defaultDocumentPath, "/grist/");
+  assert.equal(loadAdminGatewayConfig({ ...env, GRIST_DEFAULT_DOCUMENT_PATH: "/doc/Blank-document" }).defaultDocumentPath, "/doc/Blank-document");
+  assert.throws(() => loadAdminGatewayConfig({ ...env, GRIST_DEFAULT_DOCUMENT_PATH: "https://example.com/doc" }), /relative application path/);
   assert.throws(() => loadAdminGatewayConfig({ ...env, ADMIN_PASSWORD: "short" }), /at least 12/);
   assert.throws(() => loadAdminGatewayConfig({ ...env, ADMIN_SESSION_SECRET: "short" }), /at least 32/);
 });
