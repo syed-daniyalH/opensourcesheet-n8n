@@ -99,7 +99,7 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
 
     const homeResponse = await fetch(`${gatewayUrl}/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(homeResponse.status, 200);
-    assert.match(await homeResponse.text(), /Punchdeck Sheets/);
+    assert.match(await homeResponse.text(), /Aureum Data Sheet/);
 
     const editorResponse = await fetch(gatewayUrl + "/editor", { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(editorResponse.status, 200);
@@ -114,7 +114,7 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     }
     assert.match(editorHtml, /Formula guide/);
     assert.match(editorHtml, /Function reference/);
-    assert.match(editorHtml, /CRM pipeline status/);
+    assert.match(editorHtml, /Ingestion status/);
 
     const workspaceResponse = await fetch(`${gatewayUrl}/grist/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(workspaceResponse.status, 200);

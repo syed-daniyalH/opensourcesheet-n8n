@@ -1,10 +1,14 @@
-# Punchdeck → Grist integration foundation
+# Aureum data-ingestion sheet → Grist bridge
 
-This is a resource-independent foundation for sending API and scraper data into a self-hosted Grist deployment.
+This is a sheet-backed data-ingestion bridge for sending Meta leads and other API or scraper records into a self-hosted Grist deployment. It is a storage and reporting surface, not a customer-follow-up schema or a replacement CRM.
 
-It intentionally uses a mock source until the real Punchdeck API/scraper resources are available. It provides:
+The source adapter is the boundary between an external system and the sheet:
 
-- typed source-adapter and writer interfaces
+`Meta Lead API / other source → source adapter → normalized records → Grist sheet → CRM or reporting consumers`
+
+The repository currently uses a mock source until the real Meta/API resources, credentials, and field mapping are supplied. It provides:
+
+- typed source-adapter and Grist-writer interfaces
 - deterministic normalization and content hashing
 - idempotent Grist upsert structure
 - batching and exponential retry behavior
@@ -30,11 +34,11 @@ The tests do not require a Grist server because they use an in-memory writer. A 
 
 Copy `.env.example` to `.env` and fill in real values only outside source control. Keep `DRY_RUN=true` and `MOCK_SOURCE=true` for the first foundation smoke test.
 
-The first real adapter should implement `SourceAdapter` and convert source responses into the contract in `docs/DATA_CONTRACT.md`. It must be added only after the source API, authentication, unique key, and expected fields are known.
+The first real adapter should implement `SourceAdapter` and convert source responses into the ingestion envelope in `docs/DATA_CONTRACT.md`. It must be added only after the source API, authentication, pagination, unique key, and expected fields are known. The adapter fetches source data; it does not define the sheet UI and it does not silently invent CRM workflow fields.
 
 ## Admin gateway and local Grist UI
 
-The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired open-source workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic.
+The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired data workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic.
 
 For local testing, create `.env.admin.local` from `.env.example`, set a password of at least 12 characters and a session secret of at least 32 characters, then run:
 
@@ -49,7 +53,7 @@ The Compose gateway binds to host port `8487` for staging and `8488` for product
 
 The gateway is intentionally dependency-free. It is a protective entry point for this project, not a replacement for a public identity provider, HTTPS termination, rate limiting, or a production secret manager.
 
-See [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review and [`docs/REPORTING_WORKSPACE_ROADMAP.md`](docs/REPORTING_WORKSPACE_ROADMAP.md) for the Excel/Google feature mapping, delivery priorities, CRM boundary, and remaining production work. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine.
+See [`docs/INGESTION_ARCHITECTURE.md`](docs/INGESTION_ARCHITECTURE.md) for the source-to-sheet boundary, [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review, and [`docs/REPORTING_WORKSPACE_ROADMAP.md`](docs/REPORTING_WORKSPACE_ROADMAP.md) for the spreadsheet feature mapping and remaining production work. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine and storage surface.
 
 ## Deployment notes
 

@@ -35,13 +35,13 @@ This audit separates what is implemented and evidenced from what is only represe
 
 | Surface | Status | Notes |
 |---|---|---|
-| `/healthz` | Implemented and tested | Gateway liveness only; it does not prove upstream Grist or CRM health |
+| `/healthz` | Implemented and tested | Gateway liveness only; it does not prove upstream Grist or source/CRM health |
 | `/login`, `/logout` | Implemented and tested | In-memory sessions; production requires process strategy and secret rotation |
 | `/`, `/control` | Implemented and tested | Admin shell and deployment status links |
 | `/editor` | Implemented and tested | Sheets-style chrome around the Grist engine |
 | `/grist/*` HTTP proxy | Implemented and tested | Authenticated same-origin proxy; upstream behavior remains Grist behavior |
 | `/grist/*` WebSocket upgrade | Implemented in code | Browser iframe loaded; no independent CLI WebSocket assertion was run |
-| API ingestion | Implemented and tested with mock source | Real CRM/source adapter, source authentication, schema mapping, and read-back are still missing |
+| API ingestion | Implemented and tested with mock source | Real Meta/source adapter, source authentication, field mapping, and read-back are still missing |
 | Idempotent Grist upsert | Implemented and tested against a Grist-compatible fake endpoint | Real Grist write/read-back requires actual document/table/API key |
 | Google/Excel menus and ribbon | Implemented as navigation shell | Many operations are deliberately placeholders until a matching engine API is wired |
 | Cell formatting | Not implemented through the shell | Currency, percent, number formats, font, colors, borders, and alignment show a disclosure toast |
@@ -65,7 +65,7 @@ This audit separates what is implemented and evidenced from what is only represe
 
 ## What is missing before production
 
-- A real CRM/API/scraper adapter and its contract, credentials, rate limits, pagination, and schema mapping.
+- A real Meta/API/scraper adapter and its contract, credentials, rate limits, pagination, and field mapping.
 - Real Grist staging write/read-back using a pinned image and a non-test document/table.
 - Operational sync state, dead-letter handling, audit/provenance views, and alerting.
 - Actual implementations for the formatting, charts, pivot, draw, page-layout, validation, comment, protection, freeze, and bottom-bar features listed above.
@@ -74,4 +74,4 @@ This audit separates what is implemented and evidenced from what is only represe
 
 ## Production-readiness decision
 
-**Ready for staging only.** The gateway and ingestion foundation are testable and healthy locally, but claiming “fully matched,” “100% complete,” or “production ready” would be inaccurate because several visible ribbon controls are placeholders and the real CRM, VPS, backup, restore, HTTPS, and rollback paths have not been verified.
+**Ready for staging only.** The gateway and sheet-ingestion foundation are testable and healthy locally, but claiming “fully matched,” “100% complete,” or “production ready” would be inaccurate because several visible ribbon controls are placeholders and the real Meta adapter, VPS, backup, restore, HTTPS, and rollback paths have not been verified.
