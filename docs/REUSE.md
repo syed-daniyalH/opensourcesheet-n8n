@@ -1,13 +1,17 @@
-# Third-party reuse record
+# GitHub reuse evaluation
 
-No third-party source code has been copied into this foundation yet.
+This project does not copy Google Sheets or Microsoft Excel source code. Their interfaces are proprietary, so the screenshots are treated as design references only. The spreadsheet engine remains Grist, which is already present as a separate open-source service.
 
-Candidate decisions:
+| Source repository | Code/path | License | Purpose | Compatibility | Security concerns | Decision |
+|---|---|---|---|---|---|---|
+| `gristlabs/grist-core` | Docker image and proxied workspace; local checkout `grist-core` at commit `2a1e3ce9ef13fd562d086c84b03d4040077a78ae` | Apache-2.0 (`LICENSE.txt`) | Spreadsheet grid, formulas, document storage, collaboration surface | High: the gateway proxies the Grist UI/API and keeps the shell same-origin | Pin image digests for production, review upstream advisories, isolate `/persist`, keep Grist behind the authenticated gateway | **Reuse directly as a service** |
+| `gristlabs/grist-core` | REST API contract used by `src/grist-client.ts` | Apache-2.0 for the repository; API behavior must remain compatible with the deployed image | Idempotent batch upsert into a Grist table | High for the tested `PUT /api/docs/{doc}/tables/{table}/records` path | API key must stay in secret storage; validate document/table IDs; bound error bodies; rate-limit callers | **Adapt into our codebase** |
+| `gristlabs/grist-api` | Candidate Node/TypeScript client | License and current dependency posture not independently verified in this checkout | Possible typed client abstraction | Unknown until the exact API coverage and dependency graph are checked | Dependency age, transitive vulnerabilities, and auth handling require review | **Use only as architectural inspiration for now** |
+| `gristlabs/py_grist_api` | Candidate Python client | License and current dependency posture not independently verified in this checkout | Possible Python ingestion client | Low for the current TypeScript runtime | Would add a second runtime and a second auth implementation | **Reject for this runtime** |
+| `scrapy/scrapy` / `apify/crawlee` | Scraper frameworks | Not assessed for this project | Source adapters and crawling | Unknown: no real source contract, crawl volume, or anti-bot requirements supplied | SSRF, robots/terms compliance, credential handling, rate limits, and untrusted content | **Use only as architectural inspiration** |
+| `taskforcesh/bullmq` / `celery/celery` | Queue/worker frameworks | Not assessed for this project | Durable retries and background jobs | Not needed for the current bounded batch pipeline | Broker exposure, job duplication, retention, and idempotency keys need a design first | **Use only as architectural inspiration** |
+| Docker Compose / Traefik / Nginx / Caddy examples | Deployment configuration patterns | Varies by source; no code copied | VPS deployment, TLS termination, health checks | The repository contains staging/production Compose skeletons only | Pin images, terminate TLS correctly, restrict upstream ports, rotate secrets, verify backups | **Adapt only after deployment-specific review** |
 
-- `gristlabs/grist-core`: use the supported REST API and adapt the official Docker Compose patterns.
-- `gristlabs/grist-api`: inspect as a Node/TypeScript client reference; do not add directly until its dependency age and API coverage are verified.
-- `gristlabs/py_grist_api`: consider only if the final integration runtime is Python; run compatibility tests first.
-- `gristlabs/grist-omnibus`: reject for new deployments because the repository is deprecated.
-- `scrapy/scrapy`, `apify/crawlee`, `taskforcesh/bullmq`, and `celery/celery`: conditional candidates only; do not add until the target runtime, crawl volume, queue requirements, and deployment budget are known.
+## Attribution and adaptation rule
 
-When code is eventually reused, record the source URL, commit, path, license, changes, and required attribution here.
+No third-party source files have been copied into this repository. The only reuse is the Grist service and its documented API surface. If a future change copies source code, record the exact repository URL, commit, path, license, copyright notice, tests, and adaptation notes here before merging it.

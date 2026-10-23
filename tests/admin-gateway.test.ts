@@ -47,6 +47,14 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
   const gatewayUrl = await listen(gateway);
 
   try {
+    const healthResponse = await fetch(`${gatewayUrl}/healthz`);
+    assert.equal(healthResponse.status, 200);
+    assert.deepEqual(await healthResponse.json(), { status: "ok", service: "punchdeck-admin-gateway" });
+
+    const loginPageResponse = await fetch(`${gatewayUrl}/login`);
+    assert.equal(loginPageResponse.status, 200);
+    assert.match(await loginPageResponse.text(), /Admin sign in/);
+
     const protectedResponse = await fetch(`${gatewayUrl}/`, { redirect: "manual" });
     assert.equal(protectedResponse.status, 303);
     assert.equal(protectedResponse.headers.get("location"), "/login");
@@ -77,12 +85,14 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     const editorResponse = await fetch(gatewayUrl + "/editor", { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(editorResponse.status, 200);
     const editorHtml = await editorResponse.text();
-    assert.match(editorHtml, /File/);
-    assert.match(editorHtml, /Format/);
+    for (const label of ["File", "Edit", "View", "Insert", "Format", "Data", "Tools", "Extensions", "Help"]) {
+      assert.match(editorHtml, new RegExp(`>${label}<`));
+    }
     assert.match(editorHtml, /Currency format/);
     assert.match(editorHtml, /Grist spreadsheet workspace/);
-    assert.match(editorHtml, /Page Layout/);
-    assert.match(editorHtml, /Formulas/);
+    for (const label of ["Home", "Insert", "Draw", "Page Layout", "Formulas", "Data", "Review", "View", "Help"]) {
+      assert.match(editorHtml, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    }
     assert.match(editorHtml, /CRM pipeline status/);
 
     const workspaceResponse = await fetch(`${gatewayUrl}/grist/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
@@ -92,6 +102,21 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     const controlResponse = await fetch(`${gatewayUrl}/control`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(controlResponse.status, 200);
     assert.match(await controlResponse.text(), /Admin dashboard/);
+
+    const adminResponse = await fetch(`${gatewayUrl}/admin`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
+    assert.equal(adminResponse.status, 200);
+    assert.match(await adminResponse.text(), /upstream/);
+
+    const logoutResponse = await fetch(`${gatewayUrl}/logout`, {
+      redirect: "manual",
+      headers: { Cookie: cookie?.split(";", 1)[0] ?? "" },
+    });
+    assert.equal(logoutResponse.status, 303);
+    assert.equal(logoutResponse.headers.get("location"), "/login");
+
+    const afterLogoutResponse = await fetch(`${gatewayUrl}/editor`, { redirect: "manual", headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
+    assert.equal(afterLogoutResponse.status, 303);
+    assert.equal(afterLogoutResponse.headers.get("location"), "/login");
   } finally {
     await close(gateway);
     await close(upstream);

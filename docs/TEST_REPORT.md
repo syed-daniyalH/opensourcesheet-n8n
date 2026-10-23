@@ -6,7 +6,7 @@ Date: 2026-10-24
 
 Command: `npm run check`
 
-Result: **Pass — 19 tests passed, 0 failed.**
+Result: **Pass — 21 tests passed, 0 failed.**
 
 Coverage of the current foundation:
 
@@ -43,6 +43,8 @@ The smoke tests start a local HTTP endpoint, run `src/index.ts` as a child proce
 - Docker image build and container startup: **Not run** because the local Docker daemon is unavailable.
 - Real Grist API write/read-back: **Not run** because no Grist URL, document/table, or API key was supplied.
 - VPS HTTPS, DNS, backups, restore, and rollback: **Not run** because no VPS connection, provider, domain, or backup target was supplied.
+
+The local audit also verified that the Docker daemon is available and the existing `grist-local` container is healthy. The staging and production Compose files both pass `docker compose config -q` with safe placeholder values. No staging or production stack was started by this audit.
 
 ## Evidence boundary
 
