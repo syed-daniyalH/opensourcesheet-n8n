@@ -53,7 +53,12 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
 
     const loginPageResponse = await fetch(`${gatewayUrl}/login`);
     assert.equal(loginPageResponse.status, 200);
-    assert.match(await loginPageResponse.text(), /Admin sign in/);
+    const loginHtml = await loginPageResponse.text();
+    assert.match(loginHtml, /Welcome back/);
+    assert.match(loginHtml, /Punchdeck workspace/);
+    assert.match(loginHtml, /id="show-password"/);
+    assert.match(loginHtml, /autocomplete="current-password"/);
+    assert.match(loginHtml, /Protected admin access/);
 
     const protectedResponse = await fetch(`${gatewayUrl}/`, { redirect: "manual" });
     assert.equal(protectedResponse.status, 303);
