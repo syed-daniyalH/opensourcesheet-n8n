@@ -93,6 +93,8 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     for (const label of ["Home", "Insert", "Draw", "Page Layout", "Formulas", "Data", "Review", "View", "Help"]) {
       assert.match(editorHtml, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     }
+    assert.match(editorHtml, /Formula guide/);
+    assert.match(editorHtml, /Function reference/);
     assert.match(editorHtml, /CRM pipeline status/);
 
     const workspaceResponse = await fetch(`${gatewayUrl}/grist/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });

@@ -26,6 +26,7 @@ This audit separates what is implemented and evidenced from what is only represe
 | Logout/session invalidation | Pass | `/logout` redirects to `/login`; the previous session can no longer open `/editor` |
 | Top menu shell | Pass | File, Edit, View, Insert, Format, Data, Tools, Extensions, and Help opened and closed in the browser |
 | Reporting ribbon | Pass as navigation | Home, Insert, Draw, Page Layout, Formulas, Data, Review, View, and Help all selected the expected panel |
+| Responsive ribbon layout | Pass after fix | Direct tab labels now remain in a horizontal, scrollable row at narrow viewport widths |
 | Embedded Grist grid | Pass | A real document loaded inside the same-origin iframe; `Smoke Test` and formula result `2` were visible |
 | Formula/undo smoke path | Pass in existing smoke coverage | The executable pipeline and prior browser smoke run cover formula data, undo, and redo behavior |
 | Unsupported-control disclosure | Pass | Currency format displays a clear “not exposed by the current Grist engine” message |
@@ -47,7 +48,7 @@ This audit separates what is implemented and evidenced from what is only represe
 | Insert chart/table/pivot/map | Not implemented through the shell | Visible in the Insert panel only |
 | Draw tools | Not implemented | Visible in the Draw panel only |
 | Page setup/gridlines/margins | Not implemented through the shell | Print button is wired to the embedded frame; page-layout controls are not |
-| Formula library/auditing | Partially implemented | Function reference link works; Function, AutoSum, and formula-check controls are placeholders |
+| Formula library/auditing | Partially implemented | Formula guide and function-reference links work; native formula evaluation remains Grist's responsibility |
 | Sort/filter/validation/text-to-columns | Not implemented through the shell | Grist may expose related capabilities, but no adapter is wired here |
 | Comments/protection/accessibility | Partially implemented | Accessibility control shows an informational status; comment/protect controls are placeholders |
 | Full screen | Implemented in browser code | Requires browser permission/user gesture and was not treated as a production guarantee |
