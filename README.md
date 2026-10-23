@@ -55,6 +55,8 @@ The gateway is intentionally dependency-free. It is a protective entry point for
 
 See [`docs/INGESTION_ARCHITECTURE.md`](docs/INGESTION_ARCHITECTURE.md) for the source-to-sheet boundary, [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review, and [`docs/REPORTING_WORKSPACE_ROADMAP.md`](docs/REPORTING_WORKSPACE_ROADMAP.md) for the spreadsheet feature mapping and remaining production work. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine and storage surface.
 
+The pre-API acceptance gate is recorded in [`docs/SHEET_FIRST_ACCEPTANCE.md`](docs/SHEET_FIRST_ACCEPTANCE.md). External adapters should be expanded only after the direct sheet workflow is accepted by the team.
+
 ## Deployment notes
 
 - Use `deploy/compose.staging.yml` for staging first.
