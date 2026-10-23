@@ -43,7 +43,7 @@ npm run build
 npm run start:gateway
 ```
 
-Open `http://127.0.0.1:3000/`. `/control` is the technical admin dashboard, `/` is the Sheets-inspired file home, and `/grist/` opens the real spreadsheet editor. Keep Grist bound to localhost or an internal Docker network so users cannot bypass the gateway through port `8484`.
+Open `http://127.0.0.1:3000/`. `/control` is the technical admin dashboard, `/` is the Sheets-inspired file home, and `/editor` opens the authenticated editor shell with the File/Edit/View/Insert/Format/Data/Tools/Extensions/Help row plus the formatting toolbar above the real Grist workspace. `/grist/` remains the direct Grist surface for administration and troubleshooting. Keep Grist bound to localhost or an internal Docker network so users cannot bypass the gateway through port `8484`.
 
 The Compose gateway binds to host port `8487` for staging and `8488` for production; place HTTPS termination and the public subdomain in front of those gateway ports.
 

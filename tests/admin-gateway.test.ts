@@ -74,6 +74,14 @@ test("requires login, redirects a valid login to Grist, and proxies the workspac
     assert.equal(homeResponse.status, 200);
     assert.match(await homeResponse.text(), /Punchdeck Sheets/);
 
+    const editorResponse = await fetch(gatewayUrl + "/editor", { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
+    assert.equal(editorResponse.status, 200);
+    const editorHtml = await editorResponse.text();
+    assert.match(editorHtml, /File/);
+    assert.match(editorHtml, /Format/);
+    assert.match(editorHtml, /Currency format/);
+    assert.match(editorHtml, /Grist spreadsheet workspace/);
+
     const workspaceResponse = await fetch(`${gatewayUrl}/grist/`, { headers: { Cookie: cookie?.split(";", 1)[0] ?? "" } });
     assert.equal(workspaceResponse.status, 200);
     assert.equal(await workspaceResponse.text(), "upstream:/");

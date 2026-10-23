@@ -40,6 +40,15 @@ The project does not reimplement a spreadsheet engine. It uses the open-source G
 
 The current home shell is functional for navigation and search, but the named template cards are not yet separate template generators. They currently open the Grist workspace. Creating true starter documents requires either seeded Grist documents or a document-creation/template-copy API flow.
 
+The authenticated `/editor` route now adds the requested editor chrome above the real Grist surface:
+
+- File, Edit, View, Insert, Format, Data, Tools, Extensions, and Help menus;
+- undo, redo, print, number-format, font, text-style, color, border, alignment, and overflow controls;
+- a same-origin iframe containing the real Grist workspace, so document navigation and grid edits remain Grist operations;
+- working Back to home, reload, print, full-screen, undo, redo, documentation, and About actions.
+
+The menu and toolbar labels are intentionally not presented as complete Google Sheets parity. Grist does not expose a compatible cell-format API for the Google-style currency, percent, decimal, font, color, border, and alignment buttons through this gateway yet. Those controls explain the limitation when selected. This keeps the interface honest while preserving the real Grist data model.
+
 The following Google-specific capabilities are not claimed as implemented:
 
 - Google Drive identity and sharing;
