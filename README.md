@@ -32,6 +32,25 @@ Copy `.env.example` to `.env` and fill in real values only outside source contro
 
 The first real adapter should implement `SourceAdapter` and convert source responses into the contract in `docs/DATA_CONTRACT.md`. It must be added only after the source API, authentication, unique key, and expected fields are known.
 
+## Admin gateway and local Grist UI
+
+The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired open-source workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic.
+
+For local testing, create `.env.admin.local` from `.env.example`, set a password of at least 12 characters and a session secret of at least 32 characters, then run:
+
+```powershell
+npm run build
+npm run start:gateway
+```
+
+Open `http://127.0.0.1:3000/`. `/control` is the technical admin dashboard, `/` is the Sheets-inspired file home, and `/grist/` opens the real spreadsheet editor. Keep Grist bound to localhost or an internal Docker network so users cannot bypass the gateway through port `8484`.
+
+The Compose gateway binds to host port `8487` for staging and `8488` for production; place HTTPS termination and the public subdomain in front of those gateway ports.
+
+The gateway is intentionally dependency-free. It is a protective entry point for this project, not a replacement for a public identity provider, HTTPS termination, rate limiting, or a production secret manager.
+
+See [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review, supported functionality, explicit gaps, and the next implementation phases. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine.
+
 ## Deployment notes
 
 - Use `deploy/compose.staging.yml` for staging first.

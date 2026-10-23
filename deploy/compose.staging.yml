@@ -24,3 +24,21 @@ services:
       NODE_ENV: staging
     depends_on:
       - grist-staging
+
+  punchdeck-admin-staging:
+    build:
+      context: ..
+    command: ["node", "dist/admin-gateway.js"]
+    restart: unless-stopped
+    environment:
+      ADMIN_GATEWAY_HOST: 0.0.0.0
+      ADMIN_GATEWAY_PORT: 3000
+      GRIST_ORIGIN: http://grist-staging:8484
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?Set ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      ADMIN_SESSION_SECRET: ${ADMIN_SESSION_SECRET:?Set ADMIN_SESSION_SECRET}
+      ADMIN_COOKIE_SECURE: ${ADMIN_COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:8487:3000"
+    depends_on:
+      - grist-staging
