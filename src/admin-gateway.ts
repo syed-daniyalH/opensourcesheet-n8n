@@ -1,17 +1,25 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, scryptSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { connect as tcpConnect } from "node:net";
 import type { Duplex } from "node:stream";
 import { connect as tlsConnect } from "node:tls";
 import { URL } from "node:url";
-import { renderEditorShell } from "./editor-shell.js";
+import { AuditLog } from "./audit.js";
+import { RateLimiter, SessionStore, type UserAccount, UserStore } from "./auth.js";
+import { type ApiContext, handleAuditApi, handleMentionsApi, handleMetaWebhook, handleSheetsApi, handleUsersApi, handleWebhook, type MetaConfig, readBody, sendJson, webhookStatus } from "./gateway-api.js";
+import { GristClient } from "./grist-client.js";
+import { htmlEscape, renderControl, renderForbidden, renderHome } from "./pages.js";
+import { SheetStore } from "./sheet-store.js";
+import type { GristWriter } from "./types.js";
+import type { WebhookGristTarget } from "./webhook.js";
 
 const DEFAULT_SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const MAX_LOGIN_BODY_BYTES = 16 * 1024;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const modulePath = fileURLToPath(import.meta.url);
 function assetPath(name: string): string {
   const alongsideModule = resolve(modulePath, "..", "assets", name);
@@ -20,22 +28,50 @@ function assetPath(name: string): string {
 
 const aureumLogo = readFileSync(assetPath("aureum-logo.png"));
 const aureumMallDesign = readFileSync(assetPath("aureum-mall-design.jpg"));
+const loginScript = readFileSync(assetPath("login.js"));
+const standaloneEditorHtml = readFileSync(assetPath("sheet/editor.html"), "utf8");
+const SHEET_ASSET_TYPES: Record<string, string> = { ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
+// Signed-in-only static files for the editor, home, and admin pages.
+const sheetAssets = new Map<string, { body: Buffer; type: string }>(
+  ["sheet.css", "sheet.js", "home.css", "home.js", "control.css", "control.js"].map((name) => [
+    `/assets/sheet/${name}`,
+    { body: readFileSync(assetPath(`sheet/${name}`)), type: SHEET_ASSET_TYPES[name.slice(name.lastIndexOf("."))]! },
+  ]),
+);
 
 export interface AdminGatewayConfig {
   host: string;
   port: number;
   gristOrigin: string;
-  defaultDocumentPath: string;
   username: string;
   passwordDigest: Buffer;
   passwordSalt: Buffer;
   sessionSecret: string;
   sessionTtlMs: number;
   secureCookie: boolean;
+  stateDir: string;
+  sheetDataDir: string;
+  trustProxy: boolean;
+  loginMaxAttempts: number;
+  webhookRatePerMinute: number;
+  webhookSecret: string | null;
+  webhookGrist: WebhookGristConfig | null;
+  meta: MetaConfig | null;
 }
 
-interface Session {
-  expiresAt: number;
+export interface WebhookGristConfig {
+  baseUrl: string;
+  docId: string;
+  tableId: string;
+  apiKey: string;
+  batchSize: number;
+  maxRetries: number;
+  retryBaseDelayMs: number;
+}
+
+export interface AdminGatewayDependencies {
+  gristWriter?: GristWriter;
+  fetchImpl?: typeof fetch;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -73,14 +109,6 @@ function parseOrigin(value: string): string {
   return parsed.toString().replace(/\/$/, "");
 }
 
-function parseDocumentPath(value: string | undefined): string {
-  const path = value?.trim() || "/grist/";
-  if (!path.startsWith("/") || path.startsWith("//") || /[\"'<>\r\n]/.test(path)) {
-    throw new Error("GRIST_DEFAULT_DOCUMENT_PATH must be a relative application path");
-  }
-  return path;
-}
-
 function derivePassword(password: string, salt: Buffer): Buffer {
   return scryptSync(password, salt, 32);
 }
@@ -91,33 +119,86 @@ export function loadAdminGatewayConfig(env: NodeJS.ProcessEnv = process.env): Ad
   const password = required(env, "ADMIN_PASSWORD");
   if (password.length < 12) throw new Error("ADMIN_PASSWORD must be at least 12 characters");
   const passwordSalt = createHash("sha256").update(sessionSecret).digest().subarray(0, 16);
+  const stateDir = resolve(env.GATEWAY_STATE_DIR?.trim() || "data");
 
   return {
     host: env.ADMIN_GATEWAY_HOST?.trim() || "127.0.0.1",
     port: positiveInteger(env, "ADMIN_GATEWAY_PORT", 3000),
     gristOrigin: parseOrigin(required(env, "GRIST_ORIGIN")),
-    defaultDocumentPath: parseDocumentPath(env.GRIST_DEFAULT_DOCUMENT_PATH),
     username: env.ADMIN_USERNAME?.trim() || "admin",
     passwordDigest: derivePassword(password, passwordSalt),
     passwordSalt,
     sessionSecret,
     sessionTtlMs: positiveInteger(env, "ADMIN_SESSION_TTL_MS", DEFAULT_SESSION_TTL_MS),
     secureCookie: booleanValue(env, "ADMIN_COOKIE_SECURE", false),
+    stateDir,
+    sheetDataDir: resolve(env.SHEET_DATA_DIR?.trim() || join(stateDir, "sheets")),
+    trustProxy: booleanValue(env, "TRUST_PROXY", false),
+    loginMaxAttempts: positiveInteger(env, "LOGIN_MAX_ATTEMPTS", 5),
+    webhookRatePerMinute: positiveInteger(env, "WEBHOOK_RATE_LIMIT_PER_MINUTE", 120),
+    webhookSecret: loadWebhookSecret(env),
+    webhookGrist: loadWebhookGrist(env),
+    meta: loadMeta(env),
   };
 }
 
-function htmlEscape(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    "\"": "&quot;",
-    "'": "&#39;",
-  })[character] ?? character);
+function loadMeta(env: NodeJS.ProcessEnv): MetaConfig | null {
+  const verifyToken = env.META_VERIFY_TOKEN?.trim() ?? "";
+  const appSecret = env.META_APP_SECRET?.trim() ?? "";
+  if (!verifyToken && !appSecret) return null;
+  if (!verifyToken || !appSecret) throw new Error("META_VERIFY_TOKEN and META_APP_SECRET must be set together");
+  if (verifyToken.length < 16) throw new Error("META_VERIFY_TOKEN must be at least 16 characters");
+  return { verifyToken, appSecret, accessToken: env.META_ACCESS_TOKEN?.trim() || null };
+}
+
+function loadWebhookSecret(env: NodeJS.ProcessEnv): string | null {
+  const secret = env.WEBHOOK_SECRET?.trim();
+  if (!secret) return null;
+  if (secret.length < 24) throw new Error("WEBHOOK_SECRET must be at least 24 characters");
+  return secret;
+}
+
+// Webhook records are forwarded to Grist only when the Grist API settings are present and DRY_RUN=false.
+function loadWebhookGrist(env: NodeJS.ProcessEnv): WebhookGristConfig | null {
+  if (booleanValue(env, "DRY_RUN", true)) return null;
+  const names = ["GRIST_BASE_URL", "GRIST_DOC_ID", "GRIST_TABLE_ID", "GRIST_API_KEY"] as const;
+  const values = names.map((name) => env[name]?.trim() ?? "");
+  if (values.every((value) => !value)) return null;
+  const missing = names.filter((_, index) => !values[index]);
+  if (missing.length) throw new Error(`DRY_RUN=false requires ${missing.join(", ")}`);
+  const [baseUrl, docId, tableId, apiKey] = values as [string, string, string, string];
+  let parsed: URL | null = null;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) throw new Error("GRIST_BASE_URL must be a valid HTTP(S) URL");
+  return {
+    baseUrl: baseUrl.replace(/\/$/, ""),
+    docId,
+    tableId,
+    apiKey,
+    batchSize: positiveInteger(env, "BATCH_SIZE", 100),
+    maxRetries: positiveInteger(env, "MAX_RETRIES", 3),
+    retryBaseDelayMs: positiveInteger(env, "RETRY_BASE_DELAY_MS", 500),
+  };
+}
+
+// No page uses inline scripts, so the policy blocks injected script even if escaping were ever missed.
+const CONTENT_SECURITY_POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none'";
+
+function securityHeaders(response: ServerResponse): void {
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("X-Frame-Options", "SAMEORIGIN");
+  response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 }
 
 function sendHtml(response: ServerResponse, statusCode: number, body: string): void {
   response.statusCode = statusCode;
+  securityHeaders(response);
+  response.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
   response.setHeader("Content-Type", "text/html; charset=utf-8");
   response.setHeader("Cache-Control", "no-store");
   response.end(body);
@@ -147,37 +228,7 @@ function renderLogin(errorMessage?: string): string {
 @media(max-width:900px){.login-page{display:block;overflow:auto}.login-page:before{background-image:linear-gradient(rgba(8,16,22,.72),rgba(8,16,22,.96)),url("/assets/aureum-mall-design.jpg");background-position:center top}.hero{min-height:auto;padding:30px 24px 20px}.hero-copy{margin-top:100px;margin-bottom:28px}.hero h2{font-size:44px}.feature-list{flex-wrap:wrap}.login-side{padding:20px 24px 40px}.panel{padding:34px 30px}.panel-brand{margin-bottom:32px}}
 @media(max-width:480px){.hero{padding:24px 18px 16px}.hero-copy{margin-top:80px}.hero h2{font-size:38px}.feature-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.feature-list li{min-width:0;padding:10px 8px;font-size:12px}.feature-list li span{font-size:8px}.login-side{padding:16px 14px 30px}.panel{padding:30px 22px;border-radius:18px}}
 </style></head>
-<body><main class="login-page"><section class="hero" aria-labelledby="hero-title"><header><div class="brand-lockup"><span class="brand-logo-wrap"><img class="brand-logo" src="/assets/aureum-logo.png" alt="Aureum"></span><span class="brand-caption"><strong>Aureum Mall &amp; Residences</strong><span>Sales operations platform</span></span></div><p class="location">✦ Lahore · Pakistan</p></header><div class="hero-copy"><p class="eyebrow">Aureum Sales CRM</p><h2 id="hero-title">Keep every customer relationship moving.</h2><p>Manage leads, customer activity, follow-ups, and team performance from one focused workspace.</p></div><ul class="feature-list"><li>Leads<span>Organize your pipeline</span></li><li>Customers<span>Build stronger relationships</span></li><li>Follow-ups<span>Never miss the next step</span></li></ul></section><section class="login-side"><div class="panel" aria-labelledby="login-title"><div class="panel-inner"><div class="panel-brand"><span class="brand-logo-wrap"><img class="brand-logo" src="/assets/aureum-logo.png" alt="Aureum"></span><span class="panel-brand-copy"><strong>Aureum Sales CRM</strong><span>Sales operations platform</span></span></div><p class="eyebrow">Sign in to continue</p><h1 id="login-title">Welcome back</h1><p class="intro">Use your company credentials to access your assigned workspace.</p>${error}<form method="post" action="/login"><div class="field"><label class="field-label" for="username">Work email or username</label><div class="field-control"><input id="username" name="username" autocomplete="username" placeholder="you@aureum.com" required></div></div><div class="field"><label class="field-label" for="password">Password</label><div class="field-control"><input id="password" name="password" type="password" autocomplete="current-password" required><button id="show-password" class="password-toggle" type="button" aria-controls="password" aria-pressed="false" aria-label="Show password">◉</button></div></div><button class="submit" type="submit">▪ Sign in</button></form><p class="security-note">Access is managed by your organization. Contact your administrator if you need help signing in.</p></div></div></section></main><script>const password=document.getElementById('password');const showPassword=document.getElementById('show-password');showPassword.addEventListener('click',()=>{const visible=password.type==='text';password.type=visible?'password':'text';showPassword.setAttribute('aria-label',visible?'Show password':'Hide password');showPassword.setAttribute('aria-pressed',String(!visible));});</script></body></html>`;
-}
-
-function renderControl(config: AdminGatewayConfig): string {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aureum Data Control</title>
-<style>:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0b1020;color:#eef2ff}body{margin:0;background:#0b1020}.wrap{width:min(920px,calc(100vw - 40px));margin:0 auto;padding:48px 0}.top{display:flex;justify-content:space-between;gap:20px;align-items:start}.eyebrow{color:#86a7ff;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}.muted{color:#aab7d9}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:30px}.card{padding:22px;border:1px solid #33436f;border-radius:18px;background:#111a36}.card h2{margin:0 0 8px;font-size:18px}.link{display:inline-block;margin-top:14px;color:#a9bcff;font-weight:700;text-decoration:none}.link:hover{text-decoration:underline}.button{border:1px solid #435487;border-radius:9px;padding:9px 12px;color:#eef2ff;text-decoration:none}.status{color:#77e0ad;font-weight:700}</style></head>
-<body><main class="wrap"><div class="top"><div><div class="eyebrow">Aureum data control</div><h1>Admin dashboard</h1><p class="muted">Authenticated gateway for the local Grist data workspace.</p></div><a class="button" href="/logout">Sign out</a></div>
-<div class="grid"><section class="card"><h2>Grist workspace</h2><p class="muted">Open the spreadsheet editor with the Sheets-style menu and formatting bars.</p><a class="link" href="/editor">Open spreadsheet editor →</a></section>
-<section class="card"><h2>Grist administration</h2><p class="muted">Manage the Grist deployment settings.</p><a class="link" href="/admin">Open Grist admin →</a></section>
-<section class="card"><h2>Gateway status</h2><p class="status">Authenticated</p><p class="muted">Upstream: ${htmlEscape(config.gristOrigin)}</p><a class="link" href="/healthz">View health JSON →</a></section></div></main></body></html>`;
-}
-
-function renderHome(): string {
-  const sheetIcon = `<span class="sheet-icon" aria-hidden="true"><span></span></span>`;
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aureum Data Sheet</title>
-<style>
-:root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#202124;background:#fff}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#fff}.topbar{height:72px;display:flex;align-items:center;gap:20px;padding:0 26px;border-bottom:1px solid #e5e7eb;background:#fff}.hamburger{border:0;background:transparent;font-size:23px;color:#4b5563;cursor:pointer}.brand{display:flex;align-items:center;gap:11px;min-width:185px;font-size:21px;color:#202124}.sheet-icon{position:relative;display:inline-grid;place-items:center;width:36px;height:36px;border-radius:7px;background:#11a36a;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}.sheet-icon:before,.sheet-icon:after{content:"";position:absolute;background:#fff;border-radius:2px}.sheet-icon:before{width:22px;height:4px}.sheet-icon:after{width:4px;height:22px}.sheet-icon span{position:absolute;right:4px;top:5px;width:7px;height:7px;border-radius:2px;background:#8ee0bc}.search{flex:1;max-width:720px;display:flex;align-items:center;gap:12px;background:#f1f5f9;border-radius:30px;padding:0 18px;height:48px;color:#526070}.search input{border:0;outline:0;background:transparent;width:100%;font-size:16px;color:#202124}.top-actions{margin-left:auto;display:flex;align-items:center;gap:20px;color:#4b5563}.apps{font-size:22px;letter-spacing:2px}.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(140deg,#d6a06e,#435b93);color:#fff;font-weight:700;font-size:14px}
-.main{background:#f4f7fb;min-height:calc(100vh - 72px);padding:28px 34px 70px}.content{max-width:1120px;margin:0 auto}.section-head{display:flex;align-items:center;justify-content:space-between;margin:0 0 18px}.section-head h1{font-size:18px;font-weight:500;margin:0}.section-head .muted{color:#5f6368;font-size:14px}.template-row{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:18px;margin-bottom:48px}.template{min-width:0}.template-card{height:126px;border:1px solid #d7dce2;border-radius:5px;background:#fff;display:grid;place-items:center;overflow:hidden;cursor:pointer;transition:box-shadow .15s,border-color .15s}.template-card:hover{border-color:#0b8f5a;box-shadow:0 2px 8px rgba(15,23,42,.12)}.template-label{display:block;margin-top:10px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.blank-preview{width:100%;height:100%;display:grid;place-items:center}.blank-plus{width:42px;height:42px;border-radius:50%;background:linear-gradient(90deg,#f7b500 0 50%,#4285f4 50%);position:relative}.blank-plus:before,.blank-plus:after{content:"";position:absolute;background:#fff}.blank-plus:before{width:34px;height:7px;left:4px;top:18px}.blank-plus:after{width:7px;height:34px;left:18px;top:4px}.mini-grid{width:76%;height:78%;border:1px solid #d5dbe3;background:repeating-linear-gradient(0deg,#fff 0 16px,#dfe5eb 17px),repeating-linear-gradient(90deg,transparent 0 45px,#dfe5eb 46px)}.mini-grid.green{border-top:18px solid #0b9f66}.mini-grid.blue{border-top:17px solid #4d85ee}.mini-budget{width:76%;height:78%;padding:13px;background:#fff;border:1px solid #d4dae3}.mini-budget:before{content:"";display:block;width:60%;height:4px;background:#1f3f65;box-shadow:0 12px 0 #d9e2ee,0 24px 0 #d9e2ee}.mini-budget:after{content:"";display:block;margin-top:33px;width:76%;height:23px;background:linear-gradient(90deg,#f4b400 0 28%,#5a8dee 28% 58%,#dce6f6 58%)}
-.files{background:#fff;border-radius:4px;padding:0 16px 18px}.files-head,.file-row{display:grid;grid-template-columns:minmax(280px,1fr) 150px 170px 42px;align-items:center;gap:18px}.files-head{height:54px;border-bottom:1px solid #e2e6eb;color:#5f6368;font-size:13px}.file-row{min-height:58px;border-bottom:1px solid #e8ebef;font-size:14px}.file-row:last-child{border-bottom:0}.file-name{display:flex;align-items:center;gap:14px;min-width:0}.file-name a{color:#202124;text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.file-name a:hover{text-decoration:underline}.file-meta{color:#5f6368}.row-icon{display:grid;place-items:center;width:24px;height:24px;border-radius:4px;background:#0b9f66;color:#fff;font-weight:800;font-size:15px}.people{font-size:16px;color:#5f6368}.menu{border:0;background:transparent;color:#5f6368;font-size:21px;cursor:pointer}.toolbar{display:flex;align-items:center;gap:16px;color:#5f6368}.toolbar button{border:0;background:transparent;color:#5f6368;font-size:17px;cursor:pointer}.signout{color:#3568c8;text-decoration:none;font-size:13px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-@media(max-width:820px){.topbar{padding:0 14px;gap:10px}.brand{min-width:auto}.brand-label{display:none}.main{padding:22px 14px}.template-row{grid-template-columns:repeat(2,minmax(140px,1fr))}.template-row .template:last-child{display:none}.files-head,.file-row{grid-template-columns:minmax(180px,1fr) 100px 30px}.files-head div:nth-child(3),.file-row .last-opened{display:none}.search{max-width:none}.top-actions{gap:8px}}
-.drawer{position:fixed;inset:72px auto 0 0;width:270px;padding:20px;background:#fff;border-right:1px solid #dfe4ea;box-shadow:10px 0 28px rgba(15,23,42,.12);transform:translateX(-105%);transition:transform .18s ease;z-index:5}.drawer.open{transform:translateX(0)}.drawer h2{margin:0 0 14px;font-size:14px;color:#5f6368;text-transform:uppercase;letter-spacing:.08em}.drawer a{display:block;padding:12px 10px;border-radius:8px;color:#202124;text-decoration:none}.drawer a:hover{background:#eef5ff}.drawer .drawer-status{margin-top:28px;color:#5f6368;font-size:12px;line-height:1.5}.empty-state{display:none;padding:28px;color:#5f6368;text-align:center}.empty-state.visible{display:block}
-</style></head>
-<body><header class="topbar"><button id="nav-toggle" class="hamburger" aria-label="Open navigation" aria-expanded="false">☰</button><div class="brand">${sheetIcon}<span class="brand-label">Aureum Data Sheet</span></div><label class="search"><span aria-hidden="true">⌕</span><span class="sr-only">Search files</span><input id="file-search" placeholder="Search" aria-label="Search files"></label><div class="top-actions"><span class="apps" aria-label="Apps">⠿</span><span class="avatar" aria-label="Admin account">A</span></div></header>
-<aside id="nav-drawer" class="drawer" aria-hidden="true"><h2>Navigate</h2><a href="/">Home</a><a href="/editor">All spreadsheets</a><a href="/control">Admin control</a><a href="/admin">Grist administration</a><p class="drawer-status">This shell controls navigation. Grist remains the open-source spreadsheet engine underneath.</p></aside>
-<main class="main"><div class="content"><div class="section-head"><h1>Start a new data sheet</h1><div class="toolbar"><span class="muted">Template gallery</span><button aria-label="More templates">⌄</button><button aria-label="More options">⋮</button></div></div>
-<div class="template-row"><div class="template" data-search="blank spreadsheet"><a class="template-card" href="/editor" aria-label="Blank spreadsheet"><span class="blank-preview"><span class="blank-plus"></span></span></a><span class="template-label">Blank spreadsheet</span></div><div class="template" data-search="to-do list"><a class="template-card" href="/editor" aria-label="To-do list"><span class="mini-grid green"></span></a><span class="template-label">To-do list</span></div><div class="template" data-search="annual budget"><a class="template-card" href="/editor" aria-label="Annual budget"><span class="mini-budget"></span></a><span class="template-label">Annual budget</span></div><div class="template" data-search="monthly budget"><a class="template-card" href="/editor" aria-label="Monthly budget"><span class="mini-budget"></span></a><span class="template-label">Monthly budget</span></div><div class="template" data-search="team tracker"><a class="template-card" href="/editor" aria-label="Team tracker"><span class="mini-grid blue"></span></a><span class="template-label">Team tracker</span></div></div>
-<div class="section-head"><h1>Recent data sheets</h1><a class="signout" href="/logout">Sign out</a></div><section class="files" aria-label="Recent data sheets"><div class="files-head"><div>Name</div><div>Owner</div><div>Last opened by me</div><div></div></div><div class="file-row" data-search="meta lead records"><div class="file-name"><span class="row-icon">+</span><a href="/editor">Meta lead records</a><span class="people" aria-label="Shared with team">♧</span></div><div class="file-meta">me</div><div class="file-meta last-opened">Just now</div><button class="menu" aria-label="More options">⋮</button></div><div class="file-row" data-search="crm export view"><div class="file-name"><span class="row-icon">+</span><a href="/editor">CRM export view</a><span class="people" aria-label="Shared with team">♧</span></div><div class="file-meta">me</div><div class="file-meta last-opened">Today</div><button class="menu" aria-label="More options">⋮</button></div><div class="file-row" data-search="api records"><div class="file-name"><span class="row-icon">+</span><a href="/editor">API records</a></div><div class="file-meta">me</div><div class="file-meta last-opened">Earlier</div><button class="menu" aria-label="More options">⋮</button></div><div id="empty-state" class="empty-state">No data sheets match your search.</div></section></div></main>
-<script>const toggle=document.getElementById('nav-toggle');const drawer=document.getElementById('nav-drawer');const search=document.getElementById('file-search');const items=[...document.querySelectorAll('[data-search]')];const empty=document.getElementById('empty-state');toggle.addEventListener('click',()=>{const open=!drawer.classList.contains('open');drawer.classList.toggle('open',open);drawer.setAttribute('aria-hidden',String(!open));toggle.setAttribute('aria-expanded',String(open));});search.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();let shown=0;items.forEach(item=>{const visible=!query||item.dataset.search.includes(query);item.style.display=visible?'':'none';if(visible)shown++;});empty.classList.toggle('visible',shown===0);});</script></body></html>`;
+<body><main class="login-page"><section class="hero" aria-labelledby="hero-title"><header><div class="brand-lockup"><span class="brand-logo-wrap"><img class="brand-logo" src="/assets/aureum-logo.png" alt="Aureum"></span><span class="brand-caption"><strong>Aureum Mall &amp; Residences</strong><span>Sales operations platform</span></span></div><p class="location">✦ Lahore · Pakistan</p></header><div class="hero-copy"><p class="eyebrow">Aureum Sales CRM</p><h2 id="hero-title">Keep every customer relationship moving.</h2><p>Manage leads, customer activity, follow-ups, and team performance from one focused workspace.</p></div><ul class="feature-list"><li>Leads<span>Organize your pipeline</span></li><li>Customers<span>Build stronger relationships</span></li><li>Follow-ups<span>Never miss the next step</span></li></ul></section><section class="login-side"><div class="panel" aria-labelledby="login-title"><div class="panel-inner"><div class="panel-brand"><span class="brand-logo-wrap"><img class="brand-logo" src="/assets/aureum-logo.png" alt="Aureum"></span><span class="panel-brand-copy"><strong>Aureum Sales CRM</strong><span>Sales operations platform</span></span></div><p class="eyebrow">Sign in to continue</p><h1 id="login-title">Welcome back</h1><p class="intro">Use your company credentials to access your assigned workspace.</p>${error}<form method="post" action="/login"><div class="field"><label class="field-label" for="username">Work email or username</label><div class="field-control"><input id="username" name="username" autocomplete="username" placeholder="you@aureum.com" required></div></div><div class="field"><label class="field-label" for="password">Password</label><div class="field-control"><input id="password" name="password" type="password" autocomplete="current-password" required><button id="show-password" class="password-toggle" type="button" aria-controls="password" aria-pressed="false" aria-label="Show password">◉</button></div></div><button class="submit" type="submit">▪ Sign in</button></form><p class="security-note">Access is managed by your organization. Contact your administrator if you need help signing in.</p></div></div></section></main><script src="/assets/login.js"></script></body></html>`;
 }
 
 function getCookies(request: IncomingMessage): Map<string, string> {
@@ -192,34 +243,6 @@ function getCookies(request: IncomingMessage): Map<string, string> {
 function cookieHeader(token: string, config: AdminGatewayConfig): string {
   const secure = config.secureCookie ? "; Secure" : "";
   return `admin_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(config.sessionTtlMs / 1000)}${secure}`;
-}
-
-function isAuthenticated(request: IncomingMessage, sessions: Map<string, Session>): boolean {
-  const token = getCookies(request).get("admin_session");
-  const session = token ? sessions.get(token) : undefined;
-  if (!session) return false;
-  if (session.expiresAt <= Date.now()) {
-    sessions.delete(token!);
-    return false;
-  }
-  return true;
-}
-
-async function readBody(request: IncomingMessage): Promise<string> {
-  let size = 0;
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    size += buffer.length;
-    if (size > MAX_LOGIN_BODY_BYTES) throw new Error("Request body is too large");
-    chunks.push(buffer);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-function verifyLogin(username: string, password: string, config: AdminGatewayConfig): boolean {
-  const supplied = derivePassword(password, config.passwordSalt);
-  return username === config.username && supplied.length === config.passwordDigest.length && timingSafeEqual(supplied, config.passwordDigest);
 }
 
 function copyResponseHeaders(response: ServerResponse, headers: IncomingHttpHeaders): void {
@@ -296,26 +319,89 @@ function proxyUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, co
   socket.on("error", () => upstream.destroy());
 }
 
-export function createAdminGatewayServer(config: AdminGatewayConfig): Server {
-  const sessions = new Map<string, Session>();
-  const server = createServer(async (request, response) => {
-    const pathname = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`).pathname;
+function clientIpFor(config: AdminGatewayConfig): (request: IncomingMessage) => string {
+  return (request) => {
+    if (config.trustProxy) {
+      const forwarded = request.headers["x-forwarded-for"];
+      const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0]?.trim();
+      if (first) return first;
+    }
+    return request.socket.remoteAddress ?? "unknown";
+  };
+}
+
+function methodNotAllowed(response: ServerResponse, allow: string): void {
+  response.statusCode = 405;
+  response.setHeader("Allow", allow);
+  response.end();
+}
+
+export function createAdminGatewayServer(config: AdminGatewayConfig, dependencies: AdminGatewayDependencies = {}): Server {
+  const users = new UserStore(join(config.stateDir, "users.json"), { username: config.username, passwordDigest: config.passwordDigest, passwordSalt: config.passwordSalt });
+  const sessions = new SessionStore(join(config.stateDir, "sessions.json"), config.sessionTtlMs);
+  const audit = new AuditLog(join(config.stateDir, "audit.log"));
+  const clientIp = clientIpFor(config);
+  // Failed sign-ins: per IP+username, and a looser cap per IP across usernames.
+  const loginByUser = new RateLimiter(config.loginMaxAttempts, LOGIN_WINDOW_MS);
+  const loginByIp = new RateLimiter(config.loginMaxAttempts * 4, LOGIN_WINDOW_MS);
+  const gristConfig = config.webhookGrist;
+  const gristTarget: WebhookGristTarget | null = gristConfig
+    ? {
+      writer: dependencies.gristWriter ?? new GristClient(gristConfig.baseUrl, gristConfig.docId, gristConfig.apiKey),
+      tableId: gristConfig.tableId,
+      batchSize: gristConfig.batchSize,
+      maxRetries: gristConfig.maxRetries,
+      retryBaseDelayMs: gristConfig.retryBaseDelayMs,
+    }
+    : null;
+  const ctx: ApiContext = {
+    store: new SheetStore(config.sheetDataDir),
+    users,
+    sessions,
+    audit,
+    grist: gristTarget,
+    webhookSecret: config.webhookSecret,
+    meta: config.meta,
+    webhookLimiter: new RateLimiter(config.webhookRatePerMinute, 60_000),
+    fetchImpl: dependencies.fetchImpl ?? fetch,
+    clientIp,
+  };
+
+  async function currentUser(request: IncomingMessage): Promise<UserAccount | null> {
+    const session = await sessions.get(getCookies(request).get("admin_session"));
+    if (!session) return null;
+    // Role changes and removals apply immediately because the account is looked up on every request.
+    return users.get(session.username);
+  }
+
+  const handle = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+    const url = new URL(request.url ?? "/", "http://gateway.local");
+    const pathname = url.pathname;
+
+    if (pathname === "/api/webhooks/ingest" || pathname.startsWith("/api/webhooks/ingest/")) {
+      await handleWebhook(request, response, url, ctx);
+      return;
+    }
+    if (pathname === "/api/webhooks/meta") {
+      await handleMetaWebhook(request, response, url, ctx);
+      return;
+    }
 
     if (pathname === "/assets/aureum-logo.png" || pathname === "/assets/aureum-mall-design.jpg") {
-      if (request.method !== "GET") {
-        response.statusCode = 405;
-        response.setHeader("Allow", "GET");
-        response.end();
-        return;
-      }
+      if (request.method !== "GET") return methodNotAllowed(response, "GET");
       sendAsset(response, pathname.endsWith(".png") ? aureumLogo : aureumMallDesign, pathname.endsWith(".png") ? "image/png" : "image/jpeg");
       return;
     }
 
+    if (pathname === "/assets/login.js") {
+      if (request.method !== "GET") return methodNotAllowed(response, "GET");
+      securityHeaders(response);
+      sendAsset(response, loginScript, "text/javascript; charset=utf-8");
+      return;
+    }
+
     if (pathname === "/healthz") {
-      response.statusCode = 200;
-      response.setHeader("Content-Type", "application/json; charset=utf-8");
-      response.end(JSON.stringify({ status: "ok", service: "punchdeck-admin-gateway" }));
+      sendJson(response, 200, { status: "ok", service: "punchdeck-admin-gateway" });
       return;
     }
 
@@ -324,68 +410,145 @@ export function createAdminGatewayServer(config: AdminGatewayConfig): Server {
         sendHtml(response, 200, renderLogin());
         return;
       }
-      if (request.method === "POST") {
-        try {
-          const form = new URLSearchParams(await readBody(request));
-          const username = form.get("username") ?? "";
-          const password = form.get("password") ?? "";
-          if (!verifyLogin(username, password, config)) {
-            sendHtml(response, 401, renderLogin("Invalid username or password."));
-            return;
-          }
-          const token = randomBytes(32).toString("base64url");
-          sessions.set(token, { expiresAt: Date.now() + config.sessionTtlMs });
-          response.setHeader("Set-Cookie", cookieHeader(token, config));
-          redirect(response, "/");
-        } catch (error) {
-          sendHtml(response, 400, renderLogin(error instanceof Error ? error.message : "Invalid request."));
-        }
+      if (request.method !== "POST") return methodNotAllowed(response, "GET, POST");
+      const ip = clientIp(request);
+      let username = "";
+      let password = "";
+      try {
+        const form = new URLSearchParams(await readBody(request, MAX_LOGIN_BODY_BYTES));
+        username = (form.get("username") ?? "").trim();
+        password = form.get("password") ?? "";
+      } catch (error) {
+        sendHtml(response, 400, renderLogin(error instanceof Error ? error.message : "Invalid request."));
         return;
       }
-      response.statusCode = 405;
-      response.setHeader("Allow", "GET, POST");
-      response.end();
+      const userKey = `${ip}|${username.toLowerCase()}`;
+      const limited = [loginByUser.check(userKey), loginByIp.check(ip)].find((r) => !r.allowed);
+      if (limited) {
+        response.setHeader("Retry-After", String(limited.retryAfterSeconds));
+        void audit.record("login_locked", { ip, user: username });
+        sendHtml(response, 429, renderLogin(`Too many failed sign-in attempts. Try again in ${Math.ceil(limited.retryAfterSeconds / 60)} minute(s).`));
+        return;
+      }
+      const account = await users.verify(username, password);
+      if (!account) {
+        loginByUser.hit(userKey);
+        loginByIp.hit(ip);
+        void audit.record("login_failed", { ip, user: username });
+        sendHtml(response, 401, renderLogin("Invalid username or password."));
+        return;
+      }
+      loginByUser.reset(userKey);
+      const token = await sessions.create(account.username);
+      void audit.record("login", { ip, user: account.username, role: account.role });
+      response.setHeader("Set-Cookie", cookieHeader(token, config));
+      redirect(response, "/");
       return;
     }
 
     if (pathname === "/logout") {
       const token = getCookies(request).get("admin_session");
-      if (token) sessions.delete(token);
-      response.setHeader("Set-Cookie", "admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+      const session = await sessions.get(token);
+      await sessions.delete(token);
+      if (session) void audit.record("logout", { user: session.username, ip: clientIp(request) });
+      response.setHeader("Set-Cookie", `admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${config.secureCookie ? "; Secure" : ""}`);
       redirect(response, "/login");
       return;
     }
 
-    if (!isAuthenticated(request, sessions)) {
-      redirect(response, "/login");
+    const user = await currentUser(request);
+    if (!user) {
+      if (pathname.startsWith("/api/")) sendJson(response, 401, { error: "Sign in required" });
+      else redirect(response, "/login");
+      return;
+    }
+
+    if (pathname === "/api/me") {
+      sendJson(response, 200, { username: user.username, role: user.role });
+      return;
+    }
+    if (pathname === "/api/sheets" || pathname.startsWith("/api/sheets/")) {
+      await handleSheetsApi(request, response, url, user, ctx);
+      return;
+    }
+    if (pathname === "/api/users" || pathname.startsWith("/api/users/")) {
+      await handleUsersApi(request, response, url, user, ctx);
+      return;
+    }
+    if (pathname === "/api/mentions") {
+      await handleMentionsApi(request, response, user, ctx);
+      return;
+    }
+    if (pathname === "/api/audit") {
+      await handleAuditApi(request, response, url, user, ctx);
+      return;
+    }
+    if (pathname === "/api/webhooks/status") {
+      sendJson(response, 200, webhookStatus(ctx));
+      return;
+    }
+
+    const asset = sheetAssets.get(pathname);
+    if (asset) {
+      if (request.method !== "GET") return methodNotAllowed(response, "GET");
+      response.statusCode = 200;
+      securityHeaders(response);
+      response.setHeader("Content-Type", asset.type);
+      response.setHeader("Cache-Control", "no-store");
+      response.end(asset.body);
       return;
     }
 
     if (pathname === "/") {
-      sendHtml(response, 200, renderHome());
+      sendHtml(response, 200, renderHome(user));
       return;
     }
 
     if (pathname === "/editor") {
-      sendHtml(response, 200, renderEditorShell(config.defaultDocumentPath));
+      if (request.method !== "GET") return methodNotAllowed(response, "GET");
+      sendHtml(response, 200, standaloneEditorHtml);
+      return;
+    }
+
+    // Everything below (admin page and the Grist upstream) is for admins only.
+    if (user.role !== "admin") {
+      sendHtml(response, 403, renderForbidden(user));
       return;
     }
 
     if (pathname === "/control") {
-      sendHtml(response, 200, renderControl(config));
+      sendHtml(response, 200, renderControl(user, {
+        gristOrigin: config.gristOrigin,
+        webhookEnabled: !!config.webhookSecret,
+        gristForwarding: config.webhookGrist ? `${config.webhookGrist.tableId}` : null,
+        metaEnabled: !!config.meta,
+        stateDir: config.stateDir,
+      }));
       return;
     }
 
     proxyHttp(request, response, config, "/grist");
+  };
+  // An error escaping an async handler would be an unhandled rejection, which stops Node.
+  const server = createServer((request, response) => {
+    handle(request, response).catch((error: unknown) => {
+      console.error(JSON.stringify({ event: "gateway_request_failed", path: request.url, error: String(error) }));
+      if (!response.headersSent) sendJson(response, 500, { error: "Internal error" });
+      else response.destroy();
+    });
   });
 
   server.on("upgrade", (request, socket, head) => {
-    if (!isAuthenticated(request, sessions)) {
-      writeUnauthorized(socket);
-      return;
-    }
-    proxyUpgrade(request, socket, head, config, "/grist");
+    currentUser(request).then((user) => {
+      if (!user || user.role !== "admin") {
+        writeUnauthorized(socket);
+        return;
+      }
+      proxyUpgrade(request, socket, head, config, "/grist");
+    }).catch(() => socket.destroy());
   });
+
+  server.on("close", () => { void sessions.flush(); });
 
   return server;
 }
@@ -397,7 +560,7 @@ export async function startAdminGateway(env: NodeJS.ProcessEnv = process.env): P
     server.once("error", rejectListen);
     server.listen(config.port, config.host, () => resolveListen());
   });
-  console.log(JSON.stringify({ event: "admin_gateway_started", host: config.host, port: config.port, gristOrigin: config.gristOrigin }));
+  console.log(JSON.stringify({ event: "admin_gateway_started", host: config.host, port: config.port, gristOrigin: config.gristOrigin, stateDir: config.stateDir, webhook: !!config.webhookSecret, meta: !!config.meta }));
   return server;
 }
 
