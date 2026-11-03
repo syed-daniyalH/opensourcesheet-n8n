@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aureum Data Sheet</title>
+<link rel="stylesheet" href="/assets/sheet/sheet.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="titlebar">
+    <a class="logo" href="/" title="Sheets home" aria-label="Sheets home"><span class="logo-icon"></span></a>
+    <div class="title-block">
+      <div class="title-row">
+        <input id="doc-title" class="doc-title" value="Untitled spreadsheet" aria-label="Rename" spellcheck="false">
+        <button id="star" class="icon-btn star" type="button" title="Star" aria-label="Star">&#9734;</button>
+        <span id="save-state" class="save-state" aria-live="polite">Saved</span>
+      </div>
+      <nav class="menubar" id="menubar" aria-label="Menu bar"></nav>
+    </div>
+    <div class="title-actions">
+      <button class="share-btn" id="share" type="button"><span aria-hidden="true">&#128274;</span> Share</button>
+      <span class="avatar" title="Admin">A</span>
+    </div>
+  </header>
+
+  <div class="toolbar" id="toolbar" role="toolbar" aria-label="Formatting toolbar">
+    <button class="tb" data-cmd="undo" title="Undo (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62A7.95 7.95 0 0 1 12.5 10c3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 10.53 17.15 8 12.5 8z"/></svg></button>
+    <button class="tb" data-cmd="redo" title="Redo (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="M18.4 10.6A10.4 10.4 0 0 0 11.5 8c-4.65 0-8.58 2.53-9.97 6.72l2.37.78A8 8 0 0 1 11.5 10c1.95 0 3.73.72 5.12 1.88L13 15.5h9v-9l-3.6 4.1z"/></svg></button>
+    <button class="tb" data-cmd="print" title="Print (Ctrl+P)"><svg viewBox="0 0 24 24"><path d="M19 8H5a3 3 0 0 0-3 3v6h4v4h12v-4h4v-6a3 3 0 0 0-3-3zm-3 11H8v-5h8v5zm3-7a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm-1-9H6v4h12V3z"/></svg></button>
+    <button class="tb" data-cmd="paintFormat" id="paint-btn" title="Paint format"><svg viewBox="0 0 24 24"><path d="M18 4V3a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V6h1v4H9v11a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-9h8V4h-3z"/></svg></button>
+    <select class="tb-select zoom" id="zoom" title="Zoom" aria-label="Zoom">
+      <option value="0.5">50%</option><option value="0.75">75%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option>
+    </select>
+    <span class="sep"></span>
+    <button class="tb txt" data-cmd="fmtCurrency" title="Format as currency">$</button>
+    <button class="tb txt" data-cmd="fmtPercent" title="Format as percent">%</button>
+    <button class="tb txt small" data-cmd="decDown" title="Decrease decimal places">.0<span class="arrow">&larr;</span></button>
+    <button class="tb txt small" data-cmd="decUp" title="Increase decimal places">.00<span class="arrow">&rarr;</span></button>
+    <button class="tb txt dd" data-menu="numfmt" title="More formats">123<span class="caret"></span></button>
+    <span class="sep"></span>
+    <select class="tb-select font" id="font-family" title="Font" aria-label="Font">
+      <option>Arial</option><option>Calibri</option><option>Georgia</option><option>Courier New</option><option>Times New Roman</option><option>Trebuchet MS</option><option>Verdana</option><option>Comic Sans MS</option>
+    </select>
+    <span class="sep"></span>
+    <button class="tb" data-cmd="sizeDown" title="Decrease font size">&minus;</button>
+    <input class="font-size" id="font-size" value="10" aria-label="Font size" inputmode="numeric">
+    <button class="tb" data-cmd="sizeUp" title="Increase font size">+</button>
+    <span class="sep"></span>
+    <button class="tb txt" data-cmd="bold" id="tb-bold" title="Bold (Ctrl+B)"><b>B</b></button>
+    <button class="tb txt" data-cmd="italic" id="tb-italic" title="Italic (Ctrl+I)"><i>I</i></button>
+    <button class="tb txt" data-cmd="strike" id="tb-strike" title="Strikethrough (Alt+Shift+5)"><s>S</s></button>
+    <button class="tb txt" data-cmd="underline" id="tb-underline" title="Underline (Ctrl+U)"><u>U</u></button>
+    <button class="tb color dd" data-menu="textColor" title="Text color"><span class="glyph">A</span><span class="swatch" id="text-swatch"></span></button>
+    <span class="sep"></span>
+    <button class="tb color dd" data-menu="fillColor" title="Fill color"><svg viewBox="0 0 24 24"><path d="M16.56 8.94 7.62 0 6.21 1.41l2.38 2.38-5.15 5.15a1.49 1.49 0 0 0 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5a2 2 0 0 0 4 0c0-1.33-2-3.5-2-3.5z"/></svg><span class="swatch" id="fill-swatch"></span></button>
+    <button class="tb dd" data-menu="borders" title="Borders"><svg viewBox="0 0 24 24"><path d="M3 3v18h18V3H3zm8 16H5v-6h6v6zm0-8H5V5h6v6zm8 8h-6v-6h6v6zm0-8h-6V5h6v6z"/></svg></button>
+    <button class="tb" data-cmd="merge" id="tb-merge" title="Merge cells"><svg viewBox="0 0 24 24"><path d="M3 5v14h18V5H3zm16 12H5V7h14v10zM8 11h3V9l3 3-3 3v-2H8v-2zm8 2h-3v2l-3-3 3-3v2h3v2z" opacity=".9"/></svg></button>
+    <span class="sep"></span>
+    <button class="tb dd" data-menu="halign" id="tb-halign" title="Horizontal align"><svg viewBox="0 0 24 24"><path d="M3 3h18v2H3V3zm0 4h12v2H3V7zm0 4h18v2H3v-2zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
+    <button class="tb dd" data-menu="valign" title="Vertical align"><svg viewBox="0 0 24 24"><path d="M16 13h-3V3h-2v10H8l4 4 4-4zM4 19v2h16v-2H4z"/></svg></button>
+    <button class="tb" data-cmd="wrap" id="tb-wrap" title="Text wrapping"><svg viewBox="0 0 24 24"><path d="M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3 3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z"/></svg></button>
+    <span class="sep"></span>
+    <button class="tb" data-cmd="insertLink" title="Insert link"><svg viewBox="0 0 24 24"><path d="M3.9 12a3.1 3.1 0 0 1 3.1-3.1h4V7H7a5 5 0 0 0 0 10h4v-1.9H7A3.1 3.1 0 0 1 3.9 12zM8 13h8v-2H8v2zm9-6h-4v1.9h4a3.1 3.1 0 0 1 0 6.2h-4V17h4a5 5 0 0 0 0-10z"/></svg></button>
+    <button class="tb" data-cmd="filter" id="tb-filter" title="Create a filter"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/></svg></button>
+    <button class="tb txt dd" data-menu="functions" title="Functions">&Sigma;<span class="caret"></span></button>
+  </div>
+
+  <div class="formula-bar">
+    <input id="name-box" class="name-box" value="A1" aria-label="Name box" spellcheck="false">
+    <span class="fx" aria-hidden="true"><i>fx</i></span>
+    <input id="formula-input" class="formula-input" aria-label="Formula bar" spellcheck="false" autocomplete="off">
+  </div>
+
+  <div class="grid-scroll" id="grid-scroll" tabindex="-1">
+    <div class="grid-wrap" id="grid-wrap">
+      <table class="grid" id="grid"></table>
+    </div>
+    <textarea id="cell-editor" class="cell-editor" spellcheck="false" aria-label="Cell editor"></textarea>
+    <div class="add-rows" id="add-rows-control"><button type="button" id="add-rows">Add</button><input id="add-rows-count" value="100" aria-label="Rows to add"><span>more rows at bottom</span></div>
+  </div>
+
+  <footer class="sheetbar">
+    <button class="icon-btn" id="add-sheet" title="Add sheet" aria-label="Add sheet">+</button>
+    <button class="icon-btn" id="all-sheets" title="All sheets" aria-label="All sheets">&#9776;</button>
+    <div class="tabs" id="tabs"></div>
+    <button class="agg" id="agg" type="button" title="Click to change"></button>
+  </footer>
+</div>
+
+<textarea id="key-sink" class="key-sink" aria-hidden="true" tabindex="-1"></textarea>
+<input type="file" id="file-input" accept=".csv,.tsv,.txt,text/csv" hidden>
+<input type="file" id="xlsx-input" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+<style id="hidden-col-style"></style>
+<div id="popup-layer"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/assets/sheet/sheet.js"></script>
+</body>
+</html>

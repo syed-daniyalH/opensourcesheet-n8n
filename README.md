@@ -36,33 +36,32 @@ Copy `.env.example` to `.env` and fill in real values only outside source contro
 
 The first real adapter should implement `SourceAdapter` and convert source responses into the ingestion envelope in `docs/DATA_CONTRACT.md`. It must be added only after the source API, authentication, pagination, unique key, and expected fields are known. The adapter fetches source data; it does not define the sheet UI and it does not silently invent CRM workflow fields.
 
-## Admin gateway and local Grist UI
+## Admin gateway and spreadsheet workspace
 
-The project includes a small authentication gateway in `src/admin-gateway.ts`. After login it shows a Sheets-inspired data workspace home with templates and recent files, then opens the real Grist editor under `/grist/`. It protects the Grist UI and Grist admin routes and proxies HTTP and WebSocket traffic. Google Sheets is a visual and interaction reference; it is not the primary database for this deployment.
+`src/admin-gateway.ts` is the signed-in entry point. After login it shows the home page (shared spreadsheets and templates) and the editor at `/editor` (`src/assets/sheet/`). The editor is a Google Sheets–style grid: 102 functions, formatting, merges, freeze panes, filters, dropdown validation, conditional formatting, notes, charts, hidden rows and columns, CSV and Excel import/export, and version history.
 
-For local testing, create `.env.admin.local` from `.env.example`, set a password of at least 12 characters and a session secret of at least 32 characters, then run:
+- **Saving:** spreadsheets are saved on the server (`GATEWAY_STATE_DIR/sheets`) and shared with everyone who signs in. Open editors pick up other people's changes within seconds, and simultaneous edits are merged cell by cell.
+- **Roles:** admins, editors and viewers are managed on `/control`, together with the audit log. Grist (`/grist/`) is admin-only.
+- **Security:** sessions survive restarts, failed sign-ins are rate-limited, and every page sends a strict Content-Security-Policy.
+
+For local testing, create `.env.admin.local` from `.env.example`. Set `ADMIN_PASSWORD` (12+ characters), `ADMIN_SESSION_SECRET` (32+ characters) and `GRIST_ORIGIN`, then run:
 
 ```powershell
 npm run build
 npm run start:gateway
 ```
 
-Open `http://127.0.0.1:3000/`. `/control` is the technical admin dashboard, `/` is the Sheets-inspired file home, and `/editor` opens the authenticated editor shell with the File/Edit/View/Insert/Format/Data/Tools/Extensions/Help row plus the formatting toolbar above one configured Grist document. Set `GRIST_DEFAULT_DOCUMENT_PATH` to the relative document path that should open; leave it as `/grist/` only when the Grist document manager is intentionally needed. `/grist/` remains the direct Grist surface for administration and troubleshooting. Keep Grist bound to localhost or an internal Docker network so users cannot bypass the gateway through port `8484`.
+Open `http://127.0.0.1:3000/`. Local state goes to `./data` (gitignored).
 
-The Compose gateway binds to host port `8487` for staging and `8488` for production; place HTTPS termination and the public subdomain in front of those gateway ports.
+## Webhook (n8n) ingestion
 
-The gateway is intentionally dependency-free. It is a protective entry point for this project, not a replacement for a public identity provider, HTTPS termination, rate limiting, or a production secret manager.
+Set `WEBHOOK_SECRET` to let n8n post records to `POST /api/webhooks/ingest/<source>` (bearer, header, or HMAC-signed). Records appear in the **Webhook leads** spreadsheet, and every call is logged in its *Sync runs* and *Sync errors* tabs. With `DRY_RUN=false` they are also upserted into Grist. Meta Lead Ads can post directly to `/api/webhooks/meta`. Setup, payloads, and status codes are in [`docs/WEBHOOK_INTEGRATION.md`](docs/WEBHOOK_INTEGRATION.md).
 
-See [`docs/INGESTION_ARCHITECTURE.md`](docs/INGESTION_ARCHITECTURE.md) for the source-to-sheet boundary, [`docs/GOOGLE_SHEETS_UI_REVIEW.md`](docs/GOOGLE_SHEETS_UI_REVIEW.md) for the reference review, and [`docs/REPORTING_WORKSPACE_ROADMAP.md`](docs/REPORTING_WORKSPACE_ROADMAP.md) for the spreadsheet feature mapping and remaining production work. The home shell is Sheets-inspired; Grist remains the actual spreadsheet engine and storage surface.
+## Deployment
 
-The pre-API acceptance gate is recorded in [`docs/SHEET_FIRST_ACCEPTANCE.md`](docs/SHEET_FIRST_ACCEPTANCE.md). External adapters should be expanded only after the direct sheet workflow is accepted by the team.
+The compose files in `deploy/` run Grist, the gateway (non-root, health-checked, data in a `/data` volume), and Caddy for automatic HTTPS. The batch ingestion container is opt-in (`--profile ingestion`) because it runs once and exits. [`docs/OPERATIONS.md`](docs/OPERATIONS.md) covers deployment, users and roles, backups (`deploy/backup-data.sh`), restore, upgrades, and monitoring.
 
-## Deployment notes
+- Use `deploy/compose.staging.yml` first; production requires a pinned `GRIST_IMAGE` and explicit data folders.
+- Do not commit `.env`, API keys, cookies, or server credentials.
 
-- Use `deploy/compose.staging.yml` for staging first.
-- Set a real public URL and reverse-proxy it with WebSocket forwarding.
-- Use a separate `/persist` directory for staging and production.
-- Pin the production Grist image; do not use `latest` in production.
-- Do not commit `.env`, API keys, cookies, or VPS credentials.
-
-This project is not production-ready until the real adapters, schema mapping, VPS configuration, backup/restore test, and end-to-end smoke test are implemented.
+Current status and the remaining staging checklist are in [`docs/FINAL_AUDIT.md`](docs/FINAL_AUDIT.md); test evidence is in [`docs/TEST_REPORT.md`](docs/TEST_REPORT.md).

@@ -1,0 +1,13 @@
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0b1020;color:#eef2ff}body{margin:0;background:#0b1020}.wrap{width:min(920px,calc(100vw - 40px));margin:0 auto;padding:48px 0}.top{display:flex;justify-content:space-between;gap:20px;align-items:start}.eyebrow{color:#86a7ff;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}.muted{color:#aab7d9}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:30px}.card{padding:22px;border:1px solid #33436f;border-radius:18px;background:#111a36}.card h2{margin:0 0 8px;font-size:18px}.link{display:inline-block;margin-top:14px;color:#a9bcff;font-weight:700;text-decoration:none}.link:hover{text-decoration:underline}.button{border:1px solid #435487;border-radius:9px;padding:9px 12px;color:#eef2ff;text-decoration:none}.status{color:#77e0ad;font-weight:700}
+.section{margin-top:34px}.section h2{font-size:18px;margin:0 0 6px}
+table.data{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+table.data th,table.data td{padding:9px 10px;border-bottom:1px solid #26345c;text-align:left;vertical-align:top}
+table.data th{color:#86a7ff;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+table.data code{color:#c7d2fe;word-break:break-all}
+form.inline{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center}
+form.inline input,form.inline select{height:36px;border:1px solid #33436f;border-radius:8px;background:#0b1020;color:#eef2ff;padding:0 10px;font:inherit}
+.btn{height:36px;padding:0 16px;border-radius:8px;border:1px solid #4b5f99;background:#1b2750;color:#eef2ff;font:inherit;cursor:pointer}.btn:hover{background:#25356b}
+.btn.small{height:28px;padding:0 10px;font-size:12px}.btn.danger{border-color:#8b2e2e;background:#3a1717}
+.msg{min-height:20px;margin-top:8px;font-size:13px;color:#a7f3d0}.msg.error{color:#fca5a5}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:#1b2750;font-size:12px}
+.pill.on{background:#14532d;color:#bbf7d0}.pill.off{background:#3a1717;color:#fecaca}
