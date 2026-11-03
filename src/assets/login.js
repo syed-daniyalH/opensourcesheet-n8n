@@ -1,0 +1,2 @@
+/* Login page: show/hide password. */
+const password=document.getElementById('password');const showPassword=document.getElementById('show-password');showPassword.addEventListener('click',()=>{const visible=password.type==='text';password.type=visible?'password':'text';showPassword.setAttribute('aria-label',visible?'Show password':'Hide password');showPassword.setAttribute('aria-pressed',String(!visible));});
